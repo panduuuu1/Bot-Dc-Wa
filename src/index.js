@@ -86,23 +86,44 @@ const COMMANDS = [
                 return sendToWA(jid, reply);
             }
 
+            let shuttingDown = false;
+
             if (text === "!sd" && isAdmin) {
+                shuttingDown = true;
+            
                 try {
                     await sendToWA(jid, "🔌 Bot dimatikan dengan aman...");
-                    // tunggu queue selesai
-                    const { listQueue } = require("./whatsapp/queue");
-                    const pending = listQueue().filter(q => q.status === "queued" || q.status === "processing");
-                    while (pending.length > 0) {
-                        console.log(`⏳ Menunggu ${pending.length} task WA selesai...`);
-                        await new Promise(r => setTimeout(r, 500));
-                    }
-                } catch (e) {
+                } catch(e) {
                     console.error("Gagal kirim pesan sebelum shutdown:", e);
                 }
             
+                // Tunggu WA queue selesai
+                const queue = listQueue();
+                const pending = queue.filter(q => q.status === "queued" || q.status === "processing");
+                if (pending.length > 0) {
+                    console.log(`⏳ Menunggu ${pending.length} task WA selesai...`);
+                    await Promise.all(pending.map(q => new Promise(resolve => {
+                        const interval = setInterval(() => {
+                            if (q.status === "success" || q.status === "failed") {
+                                clearInterval(interval);
+                                resolve();
+                            }
+                        }, 500);
+                    })));
+                }
+            
+                try { if (sock) await sock.logout(); } catch(e){ }
                 try { if (discordClient) await discordClient.destroy(); } catch(e){ }
+            
+                console.log("🔌 Semua task selesai. Bot dimatikan.");
                 process.exit(0);
             }
+            
+            // di connection.update
+            if (connection === "close" && !shuttingDown) {
+                // hanya reconnect kalau bukan shutdown
+            }
+
 
             if (text === "!restart" && isAdmin) {
                 await sendToWA(jid, "♻ Restart...");
@@ -142,5 +163,6 @@ const COMMANDS = [
     });
 
 })();
+
 
 
