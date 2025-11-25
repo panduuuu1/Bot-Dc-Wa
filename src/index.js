@@ -1,6 +1,6 @@
 // index.js
 require("dotenv").config();
-const config = require("../../config");
+const config = require("../config");
 const { startWA, sendToWA } = require("./whatsapp");
 const startDiscord = require("./discord");
 
@@ -119,5 +119,6 @@ let discordClient = null;
     });
 
 })();
+
 
 
