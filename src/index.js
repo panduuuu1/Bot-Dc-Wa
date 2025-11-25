@@ -8,6 +8,7 @@ const queue = require("./whatsapp/queue");
 global.crypto = require("crypto");
 
 let discordClient = null;
+let shuttingDown = false;
 
 const COMMANDS = [
     { cmd: "!ping", desc: "Cek apakah bot aktif" },
@@ -21,6 +22,7 @@ const COMMANDS = [
 
 (async () => {
     console.log("🚀 Starting WA...");
+
     await startWA(async (sock, msg) => {
         try {
             const jid = msg.key.remoteJid;
@@ -52,26 +54,26 @@ const COMMANDS = [
                 return;
             }
 
-            // Commands
+            // Command handlers
             if (text === "!ping" && isAdmin) {
                 return sendToWA(jid, "🏓 Pong! Bot aktif.");
             }
 
             if (text === "!status" && isAdmin) {
-                const queueCount = queue.getQueueCount?.() || 0;
+                const queueCount = queue.listQueue().length;
                 const statusMsg = `💡 Status Bot:
-            - WA: ${sock ? "Connected ✅" : "Disconnected ❌"}
-            - Discord: ${discordClient ? "Connected ✅" : "Disconnected ❌"}
-            - WA Queue: ${queueCount} pesan`;
+- WA: ${sock ? "Connected ✅" : "Disconnected ❌"}
+- Discord: ${discordClient ? "Connected ✅" : "Disconnected ❌"}
+- WA Queue: ${queueCount} pesan`;
                 return sendToWA(jid, statusMsg);
             }
 
             if (text === "!queue" && isAdmin) {
-                const items = queue.getQueueItems?.() || [];
+                const items = queue.listQueue();
                 let reply = "📝 WA Queue:\n";
                 if (items.length === 0) reply += "Kosong.";
                 else items.forEach((q, idx) => {
-                    reply += `${idx + 1}. To: ${q.jid} → ${q.text}\n`;
+                    reply += `${idx + 1}. To: ${q.to} → ${q.text} [${q.status}]\n`;
                 });
                 return sendToWA(jid, reply);
             }
@@ -86,44 +88,29 @@ const COMMANDS = [
                 return sendToWA(jid, reply);
             }
 
-            let shuttingDown = false;
-
             if (text === "!sd" && isAdmin) {
                 shuttingDown = true;
-            
+
                 try {
                     await sendToWA(jid, "🔌 Bot dimatikan dengan aman...");
                 } catch(e) {
                     console.error("Gagal kirim pesan sebelum shutdown:", e);
                 }
-            
+
                 // Tunggu WA queue selesai
-                const queue = listQueue();
-                const pending = queue.filter(q => q.status === "queued" || q.status === "processing");
-                if (pending.length > 0) {
+                let pending = queue.listQueue().filter(q => q.status === "queued" || q.status === "processing");
+                while (pending.length > 0) {
                     console.log(`⏳ Menunggu ${pending.length} task WA selesai...`);
-                    await Promise.all(pending.map(q => new Promise(resolve => {
-                        const interval = setInterval(() => {
-                            if (q.status === "success" || q.status === "failed") {
-                                clearInterval(interval);
-                                resolve();
-                            }
-                        }, 500);
-                    })));
+                    await new Promise(r => setTimeout(r, 1000));
+                    pending = queue.listQueue().filter(q => q.status === "queued" || q.status === "processing");
                 }
-            
-                try { if (sock) await sock.logout(); } catch(e){ }
-                try { if (discordClient) await discordClient.destroy(); } catch(e){ }
-            
+
+                try { if (sock) await sock.logout(); } catch(e){ console.error(e); }
+                try { if (discordClient) await discordClient.destroy(); } catch(e){ console.error(e); }
+
                 console.log("🔌 Semua task selesai. Bot dimatikan.");
                 process.exit(0);
             }
-            
-            // di connection.update
-            if (connection === "close" && !shuttingDown) {
-                // hanya reconnect kalau bukan shutdown
-            }
-
 
             if (text === "!restart" && isAdmin) {
                 await sendToWA(jid, "♻ Restart...");
@@ -159,10 +146,7 @@ const COMMANDS = [
     process.on("SIGINT", async () => {
         console.log("🔌 Shutdown signal (SIGINT) received...");
         try { if (discordClient) await discordClient.destroy(); } catch(e){ }
-        try { process.exit(0); } catch(e){ process.exit(0); }
+        process.exit(0);
     });
 
 })();
-
-
-
