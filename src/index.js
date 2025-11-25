@@ -87,8 +87,19 @@ const COMMANDS = [
             }
 
             if (text === "!sd" && isAdmin) {
-                await sendToWA(jid, "🔌 Bot dimatikan dengan aman...");
-                try { await sock.logout(); } catch(e){ }
+                try {
+                    await sendToWA(jid, "🔌 Bot dimatikan dengan aman...");
+                    // tunggu queue selesai
+                    const { listQueue } = require("./queue");
+                    const pending = listQueue().filter(q => q.status === "queued" || q.status === "processing");
+                    while (pending.length > 0) {
+                        console.log(`⏳ Menunggu ${pending.length} task WA selesai...`);
+                        await new Promise(r => setTimeout(r, 500));
+                    }
+                } catch (e) {
+                    console.error("Gagal kirim pesan sebelum shutdown:", e);
+                }
+            
                 try { if (discordClient) await discordClient.destroy(); } catch(e){ }
                 process.exit(0);
             }
@@ -131,3 +142,4 @@ const COMMANDS = [
     });
 
 })();
+
