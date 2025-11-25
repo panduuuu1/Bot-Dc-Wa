@@ -60,9 +60,9 @@ const COMMANDS = [
             if (text === "!status" && isAdmin) {
                 const queueCount = queue.getQueueCount?.() || 0;
                 const statusMsg = `💡 Status Bot:
-- WA: ${sock ? "Connected ✅" : "Disconnected ❌"}
-- Discord: ${discordClient ? "Connected ✅" : "Disconnected ❌"}
-- WA Queue: ${queueCount} pesan`;
+            - WA: ${sock ? "Connected ✅" : "Disconnected ❌"}
+            - Discord: ${discordClient ? "Connected ✅" : "Disconnected ❌"}
+            - WA Queue: ${queueCount} pesan`;
                 return sendToWA(jid, statusMsg);
             }
 
@@ -90,7 +90,7 @@ const COMMANDS = [
                 try {
                     await sendToWA(jid, "🔌 Bot dimatikan dengan aman...");
                     // tunggu queue selesai
-                    const { listQueue } = require("./queue");
+                    const { listQueue } = require("./whatsapp/queue");
                     const pending = listQueue().filter(q => q.status === "queued" || q.status === "processing");
                     while (pending.length > 0) {
                         console.log(`⏳ Menunggu ${pending.length} task WA selesai...`);
@@ -142,4 +142,5 @@ const COMMANDS = [
     });
 
 })();
+
 
