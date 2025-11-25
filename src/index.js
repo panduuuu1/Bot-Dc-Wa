@@ -92,7 +92,7 @@ const COMMANDS = [
                 shuttingDown = true;
 
                 try {
-                    await sendToWA(jid, "🔌 Bot dimatikan dengan aman...");
+                    await sendToWA(jid, "Kenape Di Sd boss😡");
                 } catch(e) {
                     console.error("Gagal kirim pesan sebelum shutdown:", e);
                 }
@@ -105,7 +105,7 @@ const COMMANDS = [
                     pending = queue.listQueue().filter(q => q.status === "queued" || q.status === "processing");
                 }
 
-                try { if (sock) await sock.logout(); } catch(e){ console.error(e); }
+                //try { if (sock) await sock.logout(); } catch(e){ console.error(e); }
                 try { if (discordClient) await discordClient.destroy(); } catch(e){ console.error(e); }
 
                 console.log("🔌 Semua task selesai. Bot dimatikan.");
@@ -150,3 +150,4 @@ const COMMANDS = [
     });
 
 })();
+
