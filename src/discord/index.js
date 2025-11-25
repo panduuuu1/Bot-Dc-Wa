@@ -1,7 +1,7 @@
 // discord.js
 const { Client, GatewayIntentBits } = require("discord.js");
-const config = require("./config");
-const { sendToWA } = require("./whatsapp");
+const config = require("../../config");
+const { sendToWA } = require("../whatsapp");
 
 function startDiscord() {
     const discord = new Client({

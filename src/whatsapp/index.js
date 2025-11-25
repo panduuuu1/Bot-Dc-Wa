@@ -9,7 +9,7 @@ const path = require("path");
 const qrcode = require("qrcode-terminal");
 const mysql = require("mysql2/promise");
 const { addTask } = require("./queue");
-const config = require("./config");
+const config = require("../../config");
 
 const AUTH_DIR = path.resolve(process.cwd(), "auth");
 const SESSION_KEY = "default_session_backup";

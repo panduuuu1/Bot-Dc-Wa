@@ -4,7 +4,6 @@ const config = require("../config");
 const { startWA, sendToWA } = require("./whatsapp");
 const startDiscord = require("./discord");
 const queue = require("./whatsapp/queue");
-
 global.crypto = require("crypto");
 
 let discordClient = null;
