@@ -30,7 +30,10 @@ let discordClient = null;
 
             // normalize admin compare (digits only)
             const normalizedAdmins = config.ADMINS.map(a => (a || "").toString().replace(/\D/g, ""));
-            const normalizedSender = (sender || "").toString().replace(/\D/g, "");
+            const normalizedSender = (sender || "")
+            .toString()
+            .replace(/@.*$/, '')   // hilangkan domain
+            .replace(/\D/g, '');   // ambil angka saja
 
             console.log("normalizedAdmins:", normalizedAdmins);
             console.log("normalizedSender:", normalizedSender);
@@ -116,3 +119,4 @@ let discordClient = null;
     });
 
 })();
+
