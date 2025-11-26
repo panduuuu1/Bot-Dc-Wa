@@ -51,6 +51,15 @@ const COMMANDS = [
                 console.log(`normalizedSender: ${normalizedSender}`);
                 console.log(`isAdmin: ${isAdmin}`);
             }
+
+            // DEBUG SELALU TAMPIL
+            console.log("----- DEBUG ADMIN CHECK -----");
+            console.log("Raw sender:", sender);
+            console.log("Raw ADMINS:", config.ADMINS);
+            console.log("normalizedAdmins:", normalizedAdmins);
+            console.log("normalizedSender:", normalizedSender);
+            console.log("isAdmin:", isAdmin);
+            console.log("-----------------------------");
             
             // quoted reply detection
             const quoted = msg.message?.extendedTextMessage?.contextInfo?.quotedMessage;
@@ -158,5 +167,6 @@ const COMMANDS = [
     });
 
 })();
+
 
 
