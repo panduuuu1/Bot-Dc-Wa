@@ -1,4 +1,4 @@
-// discord.js
+// src/discord/index.js
 const { Client, GatewayIntentBits } = require("discord.js");
 const config = require("../../config");
 const { sendToWA } = require("../whatsapp");
@@ -66,3 +66,4 @@ ${content}
 }
 
 module.exports = startDiscord;
+
