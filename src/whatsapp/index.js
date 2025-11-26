@@ -1,4 +1,4 @@
-// whatsapp.js
+// src/whatsapp/index.js
 const {
     default: makeWASocket,
     useMultiFileAuthState,
@@ -166,3 +166,4 @@ async function sendToWA(jid, text) {
 }
 
 module.exports = { startWA, sendToWA, restoreAuthFromDb, saveAuthToDb };
+
