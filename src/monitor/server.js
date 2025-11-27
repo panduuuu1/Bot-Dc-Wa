@@ -1,37 +1,54 @@
 // src/monitor/server.js
 const express = require("express");
 const path = require("path");
-const bodyParser = require("body-parser");
-const cors = require("cors");
 const config = require("../../config");
-
-// services
-const waSvc = require("../services/wa");
-const discordSvc = require("../services/discord");
-
 const app = express();
 const PORT = process.env.MONITOR_PORT || 4000;
 
-app.use(cors());
-app.use(bodyParser.json());
-app.use(bodyParser.urlencoded({ extended: true }));
+// services (shim). These should export start/stop/getStatus/getLastQr/logout/triggerRestoreFromDb
+const waSvc = require("../services/wa");
+const discordSvc = require("../services/discord");
 
-// static (public) — you can create src/monitor/public for assets
+// middleware
+app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
+
+// CORS: allow only configured origin if provided (safer)
+const cors = require("cors");
+const allowedOrigin = process.env.MONITOR_ORIGIN || null;
+if (allowedOrigin) {
+  app.use(cors({ origin: allowedOrigin }));
+} else {
+  app.use(cors()); // fallback: open (but not recommended for production)
+}
+
+// static (public)
 app.use("/monitor/public", express.static(path.join(__dirname, "public")));
 
 // views
 app.set("views", path.join(__dirname, "views"));
 app.set("view engine", "ejs");
 
-// Panel home
+// helper: check api token header / query
+function checkToken(req) {
+  if (!config.PANEL_API_TOKEN) return false;
+  const token = req.headers["x-api-token"] || req.query.token || req.body.token;
+  return token === config.PANEL_API_TOKEN;
+}
+
+// Panel home: require token if PANEL_API_TOKEN is set
 app.get("/panel", (req, res) => {
+  if (config.PANEL_API_TOKEN && !checkToken(req)) {
+    return res.status(401).send("Unauthorized");
+  }
   res.render("panel", {
-    apiTokenHeader: process.env.PANEL_API_TOKEN ? true : false
+    apiTokenHeader: !!config.PANEL_API_TOKEN
   });
 });
 
 // API: status
 app.get("/api/status", (req, res) => {
+  if (config.PANEL_API_TOKEN && !checkToken(req)) return res.status(401).json({ error: "unauthorized" });
   res.json({
     whatsapp: waSvc.getStatus(),
     discord: discordSvc.getStatus()
@@ -40,16 +57,10 @@ app.get("/api/status", (req, res) => {
 
 // API: get latest QR (if any)
 app.get("/api/wa/qr", (req, res) => {
+  if (config.PANEL_API_TOKEN && !checkToken(req)) return res.status(401).json({ error: "unauthorized" });
   const qr = waSvc.getLastQr();
   res.json({ qr: qr || null });
 });
-
-// helper: check api token header
-function checkToken(req) {
-  if (!process.env.PANEL_API_TOKEN) return false;
-  const token = req.headers["x-api-token"] || req.query.token;
-  return token === process.env.PANEL_API_TOKEN;
-}
 
 // POST: logout WA
 app.post("/api/wa/logout", async (req, res) => {
@@ -85,8 +96,9 @@ app.post("/api/discord/restart", async (req, res) => {
   }
 });
 
-// start both services if they aren't started (best-effort)
+// Start monitor but do not forcibly start services if global event bus exists
 (async () => {
+  // Try to start services (best-effort). Services should be idempotent.
   try {
     await waSvc.start();
   } catch (e) {
