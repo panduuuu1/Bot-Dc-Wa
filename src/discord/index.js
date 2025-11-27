@@ -3,25 +3,27 @@ const { Client, GatewayIntentBits } = require("discord.js");
 const config = require("../../config");
 const { sendToWA } = require("../whatsapp");
 
-function startDiscord() {
-    const discord = new Client({
+function createDiscordInstance() {
+    const client = new Client({
         intents: [
             GatewayIntentBits.Guilds,
             GatewayIntentBits.GuildMessages,
             GatewayIntentBits.MessageContent,
-        ],
+        ]
     });
 
-    discord.on("ready", () => {
-        console.log("✅ Discord ready:", discord.user?.tag);
+    client.on("ready", () => {
+        console.log("✅ Discord ready:", client.user?.tag);
     });
 
-    discord.on("messageCreate", async (msg) => {
+    client.on("messageCreate", async (msg) => {
         try {
+            // Cek apakah channel terdaftar di CHANNEL_MAP
             if (!config.CHANNEL_MAP[msg.channel.id]) return;
 
             let content = msg.content;
 
+            // Jika pesan tidak punya text tapi ada embed → convert embed
             if (!content && msg.embeds.length > 0) {
                 const embed = msg.embeds[0];
                 let parts = [];
@@ -45,6 +47,7 @@ function startDiscord() {
 
             if (content && config.TARGET_GROUP_ID) {
                 const gardenName = config.CHANNEL_MAP[msg.channel.id];
+
                 const finalText =
 `🌱 ${gardenName} Update
 ──────────────
@@ -53,17 +56,13 @@ ${content}
 
                 await sendToWA(config.TARGET_GROUP_ID, finalText);
             }
+
         } catch (e) {
             console.error("❌ Discord forward error:", e);
         }
     });
 
-    discord.login(config.DISCORD_TOKEN).catch(e => {
-        console.error("Discord login failed:", e);
-    });
-
-    return discord;
+    return client;
 }
 
-module.exports = startDiscord;
-
+module.exports = { createDiscordInstance };
