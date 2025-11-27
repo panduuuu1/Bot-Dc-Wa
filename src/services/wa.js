@@ -12,46 +12,36 @@ function getLastQr() {
   return lastQr;
 }
 
-async function start() {
+async function start(onMessage, onReady) {
   if (sockRef) return sockRef;
 
   status = "connecting";
 
-  const onMessage = () => {}; // monitoring tidak ambil handler utama
+  // start WA dengan handler dari index.js
+  sockRef = await startWA(
+    onMessage,
+    (sock) => {
+      status = "connected";
+      lastQr = null;
 
-  const onReady = (sock) => {
-    status = "connected";
+      // panggil onReady asli
+      if (onReady) onReady(sock);
 
-    sock.ev.on("connection.update", (u) => {
-      if (u.qr) {
-        lastQr = u.qr;
-        status = "qr";
-      }
-      if (u.connection === "open") {
-        lastQr = null;
-        status = "connected";
-      }
-      if (u.connection === "close") {
-        if (status !== "stopping") status = "disconnected";
-      }
-    });
-  };
-
-  sockRef = await startWA(onMessage, onReady);
-
-  if (sockRef?.ev) {
-    sockRef.ev.on("connection.update", (u) => {
-      if (u.qr) {
-        lastQr = u.qr;
-        status = "qr";
-      } else if (u.connection === "open") {
-        lastQr = null;
-        status = "connected";
-      } else if (u.connection === "close") {
-        if (status !== "stopping") status = "disconnected";
-      }
-    });
-  }
+      sock.ev.on("connection.update", (u) => {
+        if (u.qr) {
+          lastQr = u.qr;
+          status = "qr";
+        }
+        if (u.connection === "open") {
+          lastQr = null;
+          status = "connected";
+        }
+        if (u.connection === "close") {
+          if (status !== "stopping") status = "disconnected";
+        }
+      });
+    }
+  );
 
   return sockRef;
 }
@@ -59,7 +49,6 @@ async function start() {
 async function logout() {
   status = "stopping";
   if (!sockRef) return;
-
   try { await sockRef.logout(); } catch {}
   sockRef = null;
   status = "disconnected";
