@@ -1,3 +1,5 @@
+// src/monitor/routes.js
+
 const express = require("express");
 const router = express.Router();
 
@@ -10,3 +12,4 @@ router.get("/qr", (req, res) => {
 });
 
 module.exports = router;
+
