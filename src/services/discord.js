@@ -3,7 +3,7 @@ const { Client, GatewayIntentBits } = require("discord.js");
 const config = require("../../config");
 
 let client = null;
-let status = "stopped"; // stopped | connecting | online | offline | error
+let status = "stopped";
 
 function getStatus() {
   return status;
@@ -11,6 +11,7 @@ function getStatus() {
 
 async function start() {
   if (client) return client;
+
   status = "connecting";
 
   client = new Client({
@@ -23,27 +24,18 @@ async function start() {
 
   client.on("ready", () => {
     status = "online";
-    console.log("Discord client ready:", client.user?.tag);
+    console.log("Discord ready:", client.user.tag);
   });
 
-  client.on("error", (err) => {
-    console.error("Discord error:", err);
-    status = "error";
-  });
-
-  client.on("disconnect", () => {
-    status = "offline";
-  });
-
-  client.on("shardDisconnect", () => {
-    status = "offline";
-  });
+  client.on("error", () => status = "error");
+  client.on("disconnect", () => status = "offline");
+  client.on("shardDisconnect", () => status = "offline");
 
   try {
     await client.login(config.DISCORD_TOKEN);
     return client;
   } catch (err) {
-    console.error("Discord login failed:", err?.message || err);
+    console.error("Discord login error:", err.message);
     status = "error";
     throw err;
   }
@@ -51,9 +43,7 @@ async function start() {
 
 async function stop() {
   if (!client) return;
-  try {
-    await client.destroy();
-  } catch (e) { /* ignore */ }
+  try { await client.destroy(); } catch {}
   client = null;
   status = "stopped";
 }
