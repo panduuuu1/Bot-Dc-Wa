@@ -4,6 +4,7 @@ const config = require("../config");
 const { startWA, sendToWA } = require("./whatsapp");
 const startDiscord = require("./discord");
 const queue = require("./whatsapp/queue");
+
 global.crypto = require("crypto");
 
 let discordClient = null;
@@ -22,143 +23,230 @@ const COMMANDS = [
 (async () => {
     console.log("🚀 Starting WA...");
 
-    await startWA(async (sock, msg) => {
-        try {
-            const jid = msg.key.remoteJid;
-            const sender = msg.key.participant || jid;
-
-            // ignore broadcast/status
-            if (jid === "status@broadcast") return;
-
-            // ignore messages that can't be decrypted
-            if (!msg.message) return;
-
-            const text =
-                msg.message?.conversation ||
-                msg.message?.extendedTextMessage?.text ||
-                "";
-
-            // normalize admin compare (digits only)
-            const normalizedAdmins = config.ADMINS.map(a => (a || "").toString().replace(/\D/g, ""));
-            const normalizedSender = (sender || "").toString().replace(/\D/g, "");
-            const isAdmin = normalizedAdmins.includes(normalizedSender);
-
-            // log hanya admin
-            if (isAdmin) {
-                console.log(`TEXT: ${text}`);
-                console.log(`SENDER: ${sender}`);
-                console.log(`normalizedAdmins: ${JSON.stringify(normalizedAdmins)}`);
-                console.log(`normalizedSender: ${normalizedSender}`);
-                console.log(`isAdmin: ${isAdmin}`);
-            }
-            
-            // quoted reply detection
-            const quoted = msg.message?.extendedTextMessage?.contextInfo?.quotedMessage;
-            const quotedParticipant = msg.message?.extendedTextMessage?.contextInfo?.participant;
-            const quotedFromMe = quotedParticipant === sock.user?.id;
-
-            if (quoted && quotedFromMe) {
-                if (config.TARGET_GROUP_ID) await sendToWA(config.TARGET_GROUP_ID, config.FUN_REPLY);
-                return;
-            }
-
-            // hanya proses command admin
-            if (!isAdmin) return;
-
-            // COMMANDS
-            if (text === "!ping") return sendToWA(jid, "🏓 Pong! Bot aktif.");
-
-            if (text === "!status") {
-                const queueCount = queue.listQueue().length;
-                const statusMsg = `💡 Status Bot:
-- WA: ${sock ? "Connected ✅" : "Disconnected ❌"}
-- Discord: ${discordClient ? "Connected ✅" : "Disconnected ❌"}
-- WA Queue: ${queueCount} pesan`;
-                return sendToWA(jid, statusMsg);
-            }
-
-            if (text === "!queue") {
-                const items = queue.listQueue();
-                let reply = "📝 WA Queue:\n";
-                if (items.length === 0) reply += "Kosong.";
-                else items.forEach((q, idx) => {
-                    reply += `${idx + 1}. To: ${q.to} → ${q.text} [${q.status}]\n`;
-                });
-                return sendToWA(jid, reply);
-            }
-
-            if (text === "!listgroup") {
-                const chats = Object.values(sock.chats || {});
-                const groups = chats.filter(c => c.id?.endsWith?.("@g.us"));
-                let reply = "📜 Daftar Grup:\n\n";
-                for (const g of groups) {
-                    reply += `• ${g?.subject || "Unknown"} → ${g.id}\n`;
-                }
-                return sendToWA(jid, reply);
-            }
-
-            if (text === "!sd") {
-                shuttingDown = true;
-
-                try {
-                    await sendToWA(jid, "Kenape Di Sd boss😡");
-                } catch(e) {
-                    console.error("Gagal kirim pesan sebelum shutdown:", e);
-                }
-
-                // tunggu WA queue selesai
-                let pending = queue.listQueue().filter(q => q.status === "queued" || q.status === "processing");
-                while (pending.length > 0) {
-                    console.log(`⏳ Menunggu ${pending.length} task WA selesai...`);
-                    await new Promise(r => setTimeout(r, 1000));
-                    pending = queue.listQueue().filter(q => q.status === "queued" || q.status === "processing");
-                }
-
-                try { if (discordClient) await discordClient.destroy(); } catch(e){ console.error(e); }
-
-                console.log("🔌 Semua task selesai. Bot dimatikan.");
-                process.exit(0);
-            }
-
-            if (text === "!restart") {
-                await sendToWA(jid, "♻ Restart...");
-                process.exit(1); // pm2/process manager restart
-            }
-
-            if (text === "!help") {
-                let helpMsg = "📋 Daftar Command Admin:\n\n";
-                COMMANDS.forEach(c => {
-                    helpMsg += `${c.cmd} → ${c.desc}\n`;
-                });
-                return sendToWA(jid, helpMsg);
-            }
-
-        } catch (err) {
-            console.error("Error WA handler (admin only):", err);
-        }
-    }, async (sock) => {
-        console.log("✅ WA Ready callback");
-        if (config.TARGET_GROUP_ID) {
+    await startWA(
+        /**
+         * =============================
+         *  ON MESSAGE HANDLER
+         * =============================
+         */
+        async (sock, msg) => {
             try {
-                await sendToWA(config.TARGET_GROUP_ID, "Ready Pa Bos 😏");
-                console.log("✅ Auto message dikirim ke grup");
+                const jid = msg.key.remoteJid;
+                const sender = msg.key.participant || jid;
+
+                // abaikan status & pesan rusak
+                if (jid === "status@broadcast") return;
+                if (!msg.message) return;
+
+                // ambil teks
+                const text =
+                    msg.message?.conversation ||
+                    msg.message?.extendedTextMessage?.text ||
+                    "";
+
+                /**
+                 * =============================
+                 *   ADMIN CHECK
+                 * =============================
+                 */
+                const normalizedAdmins = config.ADMINS.map(a =>
+                    (a || "").toString().replace(/\D/g, "")
+                );
+
+                const normalizedSender = (sender || "")
+                    .toString()
+                    .replace(/\D/g, "");
+
+                const isAdmin = normalizedAdmins.includes(normalizedSender);
+
+                // logging khusus admin
+                if (isAdmin) {
+                    console.log("===== ADMIN MESSAGE =====");
+                    console.log("Text:", text);
+                    console.log("Sender:", sender);
+                    console.log("normalizedAdmins:", normalizedAdmins);
+                    console.log("normalizedSender:", normalizedSender);
+                    console.log("isAdmin:", isAdmin);
+                    console.log("==========================");
+                }
+
+                /**
+                 * =============================
+                 *  QUOTED MESSAGE FROM BOT
+                 * =============================
+                 */
+                const quoted =
+                    msg.message?.extendedTextMessage?.contextInfo
+                        ?.quotedMessage;
+                const quotedParticipant =
+                    msg.message?.extendedTextMessage?.contextInfo?.participant;
+
+                const quotedFromMe = quotedParticipant === sock.user?.id;
+
+                if (quoted && quotedFromMe) {
+                    if (config.TARGET_GROUP_ID) {
+                        await sendToWA(
+                            config.TARGET_GROUP_ID,
+                            config.FUN_REPLY
+                        );
+                    }
+                    return;
+                }
+
+                /**
+                 * =============================
+                 *     HANYA ADMIN BOLEH COMMAND
+                 * =============================
+                 */
+                if (!isAdmin) return;
+
+                // ===========================
+                // COMMANDS
+                // ===========================
+
+                if (text === "!ping") {
+                    return sendToWA(jid, "🏓 Pong! Bot aktif.");
+                }
+
+                if (text === "!status") {
+                    const queueCount = queue.listQueue().length;
+                    const statusMsg = `💡 Status Bot:
+- WA: ${sock ? "Connected ✅" : "Disconnected ❌"}
+- Discord: ${
+                        discordClient ? "Connected ✅" : "Disconnected ❌"
+                    }
+- WA Queue: ${queueCount} pesan`;
+
+                    return sendToWA(jid, statusMsg);
+                }
+
+                if (text === "!queue") {
+                    const items = queue.listQueue();
+                    let reply = "📝 WA Queue:\n";
+
+                    if (items.length === 0) reply += "Kosong.";
+                    else {
+                        items.forEach((q, idx) => {
+                            reply += `${idx + 1}. To: ${q.to} → ${
+                                q.text
+                            } [${q.status}]\n`;
+                        });
+                    }
+
+                    return sendToWA(jid, reply);
+                }
+
+                if (text === "!listgroup") {
+                    const chats = Object.values(sock.chats || {});
+                    const groups = chats.filter(c =>
+                        c.id?.endsWith?.("@g.us")
+                    );
+
+                    let reply = "📜 Daftar Grup:\n\n";
+
+                    for (const g of groups) {
+                        reply += `• ${
+                            g?.subject || "Unknown"
+                        } → ${g.id}\n`;
+                    }
+
+                    return sendToWA(jid, reply);
+                }
+
+                if (text === "!sd") {
+                    shuttingDown = true;
+                    await sendToWA(jid, "Kenapa di-SD bos? 😡");
+
+                    // tunggu queue selesai
+                    let pending = queue
+                        .listQueue()
+                        .filter(
+                            q =>
+                                q.status === "queued" ||
+                                q.status === "processing"
+                        );
+
+                    while (pending.length > 0) {
+                        console.log(
+                            `⏳ Menunggu ${pending.length} task WA selesai...`
+                        );
+                        await new Promise(r => setTimeout(r, 1000));
+
+                        pending = queue
+                            .listQueue()
+                            .filter(
+                                q =>
+                                    q.status === "queued" ||
+                                    q.status === "processing"
+                            );
+                    }
+
+                    try {
+                        if (discordClient) await discordClient.destroy();
+                    } catch (e) {
+                        console.error(e);
+                    }
+
+                    console.log("🔌 Semua task selesai. Bot dimatikan.");
+                    process.exit(0);
+                }
+
+                if (text === "!restart") {
+                    await sendToWA(jid, "♻ Restart...");
+                    process.exit(1);
+                }
+
+                if (text === "!help") {
+                    let helpMsg = "📋 Daftar Command Admin:\n\n";
+
+                    COMMANDS.forEach(c => {
+                        helpMsg += `${c.cmd} → ${c.desc}\n`;
+                    });
+
+                    return sendToWA(jid, helpMsg);
+                }
             } catch (err) {
-                console.error("Gagal kirim auto message:", err?.message || err);
+                console.error("Error WA handler (admin only):", err);
             }
+        },
+
+        /**
+         * =============================
+         *     ON READY CALLBACK
+         * =============================
+         */
+        async sock => {
+            console.log("✅ WA Ready callback");
+
+            if (config.TARGET_GROUP_ID) {
+                try {
+                    await sendToWA(
+                        config.TARGET_GROUP_ID,
+                        "Ready Pa Bos 😏"
+                    );
+                    console.log("✅ Auto message dikirim ke grup");
+                } catch (err) {
+                    console.error("Gagal kirim auto message:", err);
+                }
+            }
+
+            console.log("🚀 Starting Discord...");
+            discordClient = startDiscord();
         }
+    );
 
-        console.log("🚀 Starting Discord...");
-        discordClient = startDiscord();
-    });
-
+    /**
+     * =============================
+     *   HANDLE CTRL+C
+     * =============================
+     */
     process.on("SIGINT", async () => {
-        console.log("🔌 Shutdown signal (SIGINT) received...");
-        try { if (discordClient) await discordClient.destroy(); } catch(e){ }
+        console.log("🔌 Shutdown signal diterima (SIGINT)");
+
+        try {
+            if (discordClient) await discordClient.destroy();
+        } catch {}
+
         process.exit(0);
     });
-
 })();
-
-
-
-
