@@ -1,4 +1,4 @@
-// config.js
+// config/index.js
 require('dotenv').config();
 
 const parseChannelMap = (raw) => {
@@ -29,3 +29,4 @@ module.exports = {
   MYSQL_URI: process.env.MYSQL_URI || "",
   FUN_REPLY: process.env.FUN_REPLY || "Hehe, saya bot lucu 😜"
 };
+
