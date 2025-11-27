@@ -19,14 +19,16 @@ const parseChannelMap = (raw) => {
   );
 };
 
+const rawAdmins = process.env.ADMINS || process.env.ADMIN_JID || "";
+
 module.exports = {
-  ADMINS: process.env.ADMINS
-    ? process.env.ADMINS.split(",").map(s => s.trim()).filter(Boolean)
+  ADMINS: rawAdmins
+    ? rawAdmins.split(",").map(s => s.trim()).filter(Boolean)
     : [],
   TARGET_GROUP_ID: (process.env.TARGET_GROUP_ID || "").trim(),
   DISCORD_TOKEN: (process.env.DISCORD_TOKEN || "").trim(),
   CHANNEL_MAP: parseChannelMap(process.env.CHANNEL_MAP),
   MYSQL_URI: process.env.MYSQL_URI || "",
-  FUN_REPLY: process.env.FUN_REPLY || "Hehe, saya bot lucu 😜"
+  FUN_REPLY: process.env.FUN_REPLY || "Hehe, saya bot lucu 😜",
+  PANEL_API_TOKEN: (process.env.PANEL_API_TOKEN || "").trim()
 };
-
