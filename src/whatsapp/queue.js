@@ -2,15 +2,36 @@
 const { default: PQueue } = require("p-queue");
 const { v4: uuidv4 } = require("uuid");
 
+/**
+ * WA message sending queue (global)
+ *  - interval     : 1 second
+ *  - intervalCap  : max 4 messages / second
+ */
 const waQueue = new PQueue({
-    interval: 1000,   // 1 detik
-    intervalCap: 4    // maksimal 4 pesan per interval
+    interval: 1000,
+    intervalCap: 4
 });
 
-// Database queue dalam memory
+/** In-memory queue store */
 let QUEUE = [];
 
-// Tambah ke antrian
+/** Optional: Auto clean done tasks after X ms */
+const AUTO_CLEAN_MS = 1000 * 60 * 30; // 30 menit
+
+function cleanup() {
+    const now = Date.now();
+    QUEUE = QUEUE.filter(item => {
+        if (!item.doneAt) return true;
+        return now - item.doneAt < AUTO_CLEAN_MS;
+    });
+}
+
+/**
+ * Add task to WA send queue
+ * @param {string} to - WA JID
+ * @param {string} text - message content
+ * @param {function} sendFunction - actual sender
+ */
 function addTask(to, text, sendFunction) {
     const id = uuidv4();
 
@@ -39,31 +60,41 @@ function addTask(to, text, sendFunction) {
         } catch (err) {
             item.status = "failed";
             item.doneAt = Date.now();
-            item.error = err.message || err.toString();
+            item.error = err.message || String(err);
         }
+
+        cleanup();
     });
 
     return id;
 }
 
-// Dapatkan seluruh antrean
+/** Returns full queue */
 function listQueue() {
     return QUEUE;
 }
 
-// Dapatkan jumlah antrean
+/** Returns count */
 function getQueueCount() {
     return QUEUE.length;
 }
 
-// Dapatkan seluruh antrean (copy)
+/** Returns queue clone (safe for panel) */
 function getQueueItems() {
     return [...QUEUE];
+}
+
+/** Clear queue manually (for panel button) */
+function clearQueue() {
+    QUEUE = [];
+    return true;
 }
 
 module.exports = {
     addTask,
     listQueue,
     getQueueCount,
-    getQueueItems
+    getQueueItems,
+    clearQueue
 };
+
