@@ -3,50 +3,60 @@ const config = require("../../config");
 const { createDiscordInstance } = require("../discord");
 
 let client = null;
-let status = "stopped"; // stopped | connecting | online | offline | error
+let status = "stopped"; 
+// status = stopped | connecting | online | offline | error
 
 function getStatus() {
-  return status;
+    return status;
 }
 
 async function start() {
-  if (client) return client;
+    if (client) return client;
 
-  status = "connecting";
-  client = createDiscordInstance();
+    status = "connecting";
+    client = createDiscordInstance();
 
-  client.on("ready", () => {
-      status = "online";
-      console.log("Discord client ready:", client.user?.tag);
-  });
+    /* ====== STATUS TRACKING ====== */
+    client.on("ready", () => {
+        status = "online";
+        console.log("⚡ [Discord] Ready as", client.user?.tag);
+    });
 
-  client.on("error", (err) => {
-      console.error("Discord error:", err);
-      status = "error";
-  });
+    client.on("error", (err) => {
+        status = "error";
+        console.error("❌ [Discord] Error:", err);
+    });
 
-  client.on("disconnect", () => {
-      status = "offline";
-  });
+    client.on("disconnect", () => {
+        status = "offline";
+        console.warn("🔌 [Discord] Disconnected");
+    });
 
-  try {
-      await client.login(config.DISCORD_TOKEN);
-      return client;
-  } catch (err) {
-      console.error("Discord login failed:", err?.message || err);
-      status = "error";
-      client = null;
-      throw err;
-  }
+    /* ====== LOGIN HANDLING ====== */
+    try {
+        await client.login(config.DISCORD_TOKEN);
+        return client;
+    } catch (err) {
+        console.error("❌ Discord login failed:", err.message || err);
+        status = "error";
+        client = null;
+        throw err;
+    }
 }
 
 async function stop() {
-  if (!client) return;
-  try {
-      await client.destroy();
-  } catch (e) { /* ignore */ }
-  client = null;
-  status = "stopped";
+    if (!client) return;
+
+    try {
+        await client.destroy();
+    } catch (_) {}
+
+    client = null;
+    status = "stopped";
 }
 
-module.exports = { start, stop, getStatus };
+module.exports = { 
+    start, 
+    stop, 
+    getStatus 
+};

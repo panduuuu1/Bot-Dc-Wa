@@ -1,9 +1,8 @@
 // src/whatsapp/index.js
-
 const {
-    default: makeWASocket,
-    useMultiFileAuthState,
-    DisconnectReason
+  default: makeWASocket,
+  useMultiFileAuthState,
+  DisconnectReason
 } = require("@whiskeysockets/baileys");
 
 const fs = require("fs-extra");
@@ -13,6 +12,7 @@ const mysql = require("mysql2/promise");
 const { addTask } = require("./queue");
 const config = require("../../config");
 
+// ----------------------- CONFIG & CONSTANT -----------------------
 const AUTH_DIR = path.resolve(process.cwd(), "auth");
 const SESSION_KEY = "default_session_backup";
 
@@ -22,25 +22,23 @@ const pool = mysql.createPool({
   connectionLimit: 5
 });
 
-/* -------------------------- DB SESSION TABLE -------------------------- */
+// ----------------------- DB TABLE -------------------------------
 async function ensureTable() {
   await pool.query(`
     CREATE TABLE IF NOT EXISTS wa_sessions (
       session VARCHAR(255) PRIMARY KEY,
       data LONGBLOB,
-      updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+      updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP 
+      ON UPDATE CURRENT_TIMESTAMP
     );
   `);
   console.log("📁 Table wa_sessions OK");
 }
 
-/* --------------------------- SAVE AUTH TO DB -------------------------- */
+// ----------------------- SAVE AUTH ------------------------------
 async function saveAuthToDb(session = SESSION_KEY) {
   try {
-    if (!(await fs.pathExists(AUTH_DIR))) {
-      console.warn("Auth dir not found, nothing to save.");
-      return;
-    }
+    if (!(await fs.pathExists(AUTH_DIR))) return;
 
     const files = await fs.readdir(AUTH_DIR);
     const map = {};
@@ -51,6 +49,7 @@ async function saveAuthToDb(session = SESSION_KEY) {
     }
 
     const blob = Buffer.from(JSON.stringify(map));
+
     await pool.query(
       "REPLACE INTO wa_sessions (session, data) VALUES (?, ?)",
       [session, blob]
@@ -62,7 +61,7 @@ async function saveAuthToDb(session = SESSION_KEY) {
   }
 }
 
-/* ------------------------- RESTORE AUTH FROM DB ----------------------- */
+// ----------------------- RESTORE AUTH ---------------------------
 async function restoreAuthFromDb(session = SESSION_KEY) {
   try {
     const [rows] = await pool.query(
@@ -71,15 +70,18 @@ async function restoreAuthFromDb(session = SESSION_KEY) {
     );
 
     if (!rows.length) {
-      console.log("No auth in DB.");
+      console.log("No auth found in DB.");
       return false;
     }
 
     const map = JSON.parse(rows[0].data.toString());
+
     await fs.ensureDir(AUTH_DIR);
 
     const existing = await fs.readdir(AUTH_DIR).catch(() => []);
-    for (const f of existing) await fs.remove(path.join(AUTH_DIR, f));
+
+    for (const f of existing)
+      await fs.remove(path.join(AUTH_DIR, f));
 
     for (const [name, b64] of Object.entries(map)) {
       await fs.writeFile(
@@ -89,6 +91,7 @@ async function restoreAuthFromDb(session = SESSION_KEY) {
     }
 
     console.log("📦 Auth restored to ./auth");
+
     return true;
   } catch (err) {
     console.error("Failed restoreAuthFromDb:", err);
@@ -96,55 +99,64 @@ async function restoreAuthFromDb(session = SESSION_KEY) {
   }
 }
 
-/* ----------------------------- WA SOCKET ------------------------------- */
+// ----------------------------------------------------------------
+// ---------------------- WA SOCKET CORE ---------------------------
+// ----------------------------------------------------------------
+
 let sock = null;
 let reconnectAttempts = 0;
-const maxReconnectAttempts = 10;
+const MAX_RECONNECT = 10;
 
 async function startWA(onMessage, onReady) {
   await ensureTable();
 
-  const hasLocal = (await fs.pathExists(AUTH_DIR))
-    && (await fs.readdir(AUTH_DIR)).length > 0;
+  // restore from DB if no local auth
+  const hasLocalAuth =
+    (await fs.pathExists(AUTH_DIR)) &&
+    (await fs.readdir(AUTH_DIR)).length > 0;
 
-  if (!hasLocal) {
-    console.log("No local auth — attempt restore DB…");
+  if (!hasLocalAuth) {
+    console.log("No local auth → fetching from MySQL…");
     await restoreAuthFromDb();
   }
 
+  // Init multi file auth state
   const { state, saveCreds } = await useMultiFileAuthState(AUTH_DIR);
 
+  // Create socket
   sock = makeWASocket({
     auth: state,
     browser: ["BridgeBot", "Chrome", "1.0"],
     syncFullHistory: false,
   });
 
-  /* AUTO SAVE CREDS */
+  // Auto save creds
   sock.ev.on("creds.update", async () => {
     await saveCreds();
     await saveAuthToDb();
   });
 
-  /* CONNECTION EVENTS */
-  sock.ev.on("connection.update", async (u) => {
-    const { connection, qr, lastDisconnect } = u;
+  // CONNECTION UPDATE
+  sock.ev.on("connection.update", async (update) => {
+    const { connection, qr, lastDisconnect } = update;
 
     if (qr) {
-      console.log("🔗 Scan QR:");
+      console.log("🔗 Scan QR below:");
       qrcode.generate(qr, { small: true });
     }
 
     if (connection === "open") {
       reconnectAttempts = 0;
       console.log("WA Ready!");
+
       if (onReady) onReady(sock);
     }
 
     if (connection === "close") {
       const code = lastDisconnect?.error?.output?.statusCode;
-      console.warn("WA closed", code);
+      console.warn("WA closed:", code);
 
+      // Logout → remove local + DB
       if (code === DisconnectReason.loggedOut) {
         await fs.remove(AUTH_DIR);
         await pool.query("DELETE FROM wa_sessions WHERE session = ?", [SESSION_KEY]);
@@ -152,33 +164,43 @@ async function startWA(onMessage, onReady) {
         return;
       }
 
+      // Reconnect logic
       reconnectAttempts++;
-      if (reconnectAttempts > maxReconnectAttempts) {
-        console.error("Reconnect limit reached.");
+      if (reconnectAttempts > MAX_RECONNECT) {
+        console.error("Reconnect limit exceeded.");
         sock = null;
         return;
       }
 
-      const wait = Math.min(30000, 1000 * (2 ** reconnectAttempts));
-      setTimeout(() => startWA(onMessage, onReady), wait);
+      const delay = Math.min(30000, 500 * 2 ** reconnectAttempts);
+      setTimeout(() => startWA(onMessage, onReady), delay);
     }
   });
 
-  /* MESSAGE HANDLER */
+  // MESSAGE HANDLER
   sock.ev.on("messages.upsert", async (m) => {
-    if (!m.messages[0]?.message) return;
-    if (onMessage) await onMessage(sock, m.messages[0]);
+    const msg = m.messages?.[0];
+    if (!msg?.message) return;
+
+    if (onMessage) await onMessage(sock, msg);
   });
 
   return sock;
 }
 
+// ----------------------- SEND MESSAGE ----------------------------
 async function sendToWA(jid, text) {
   if (!sock) throw new Error("Socket not initialized");
+
   return addTask(jid, text, async (to, msg) => {
     await sock.sendMessage(to, { text: msg });
   });
 }
 
-module.exports = { startWA, sendToWA, restoreAuthFromDb, saveAuthToDb };
+module.exports = {
+  startWA,
+  sendToWA,
+  restoreAuthFromDb,
+  saveAuthToDb
+};
 

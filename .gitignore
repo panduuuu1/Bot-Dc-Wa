@@ -1,3 +1,10 @@
+# Penting
+backup.js
+backup2.js
+src/monitor
+src/debug.js
+
+
 # Environment
 .env
 .env.local
